@@ -9,8 +9,31 @@ Infrastructure (OCI).
 
 **Bot en producción:** [@LabTestAgentbot](https://t.me/LabTestAgentbot)
 
-## Índice
+## Evidencia del despliegue
 
+La aplicación está desplegada en Oracle Cloud Infrastructure (OCI) y funcionando
+en producción. Puedes probarla en vivo escribiendo a
+[@LabTestAgentbot](https://t.me/LabTestAgentbot) en Telegram.
+
+**Instancia 3 en OCI (estado `Running`):**
+
+<img width="903" height="551" alt="oci" src="https://github.com/user-attachments/assets/caf1d280-2ffd-4a9f-9875-313136a7fbc5" />
+
+_Instancia de cómputo desplegada en OCI, región **sa-santiago-1** (Santiago,
+Chile), compartimento `tech-builder`. Shape **VM.Standard.E5.Flex** (1 OCPU,
+12 GB RAM), imagen **Oracle Linux 9** (`Oracle-Linux-9.8-2026.07.20-0`), dentro
+de la VCN `tech-builder-vcn`. Sobre esta instancia corren los contenedores
+`api` (FastAPI + LangGraph) y `caddy` (HTTPS) vía Docker Compose._
+
+**Bot respondiendo en Telegram:**
+
+<img width="384" height="835" alt="image" src="https://github.com/user-attachments/assets/90107e86-baab-4c65-8416-c711658838a2" />
+
+_El bot interpretando un examen de laboratorio en tiempo real, servido desde la
+instancia OCI vía webhook de FastAPI + Caddy (HTTPS)._
+
+## Índice
+- [Evidencia del despliegue](#evidencia-del-despliegue)
 - [Arquitectura del agente](#arquitectura-del-agente)
 - [Estructura del proyecto](#estructura-del-proyecto)
 - [Configuración local](#configuración-local)
@@ -52,12 +75,12 @@ final_action: str                # Nodo o ruta final ejecutada
     ANALIZAR_EXAMEN        PEDIR_INFO        FUERA_DE_ALCANCE
               │                 │                 │
               ▼                 ▼                 ▼
-        ┌───────────┐   ┌────────────────┐  ┌──────────────────┐
+        ┌───────────┐   ┌────────────────┐  ┌───────────────────┐
         │ rag_node  │   │ ask_info_node  │  │ out_of_scope_node │
         └─────┬─────┘   └────────┬───────┘  └─────────┬─────────┘
-              │                  │                     │
-              ▼                  ▼                     ▼
-      ┌───────────────┐        END                   END
+              │                  │                    │
+              ▼                  ▼                    ▼
+      ┌───────────────┐         END                  END
       │ evaluate_node │
       └───────┬───────┘
               │
@@ -113,6 +136,75 @@ sobre esto en [Troubleshooting](#troubleshooting-real-bitácora-del-despliegue).
 5. Expone un retriever con `search_type="similarity_score_threshold"`
    (`RETRIEVER_SCORE_THRESHOLD=0.3`, `RETRIEVER_K=4` por defecto).
 
+## Ejemplos de uso
+
+El agente clasifica cada mensaje en una de tres rutas. A continuación, ejemplos
+reales de preguntas que puede recibir y el tipo de respuesta que genera en cada
+caso.
+
+### 1. Analizar un examen (ruta `ANALIZAR_EXAMEN`)
+
+Cuando el usuario aporta un parámetro de laboratorio con su valor, el agente lo
+compara contra los rangos de referencia del PDF y responde si está normal,
+alterado o en nivel crítico.
+
+**Pregunta:**
+> Tengo el potasio en 6.8 mEq/L
+
+**Respuesta del agente:**
+> **ALERTA DE EMERGENCIA** — Un potasio de 6.8 mEq/L está por encima del rango
+> de referencia normal (3.5–5.0 mEq/L) y se considera un valor crítico/de pánico.
+> Un nivel tan elevado puede afectar el ritmo cardíaco y requiere **atención
+> médica de urgencia de inmediato**.
+>
+> _Nota: este análisis es orientativo y debe ser revisado por tu médico tratante._
+
+**Pregunta:**
+> Hemoglobina en 14 g/dL
+
+**Respuesta del agente:**
+> Tu hemoglobina de 14 g/dL se encuentra **dentro del rango normal** según los
+> valores de referencia. No se observan alteraciones en este parámetro.
+>
+> _Nota: recuerda que los análisis de laboratorio deben ser interpretados por tu
+> médico tratante._
+
+### 2. Pedir información faltante (ruta `PEDIR_INFO`)
+
+Si el examen mencionado no tiene datos suficientes para evaluarlo, el agente
+pide lo que falta en lugar de responder a ciegas.
+
+**Pregunta:**
+> Tengo la glucosa en 110
+
+**Respuesta del agente:**
+> Para interpretar correctamente tu glucosa necesito un dato más: ¿el valor fue
+> tomado **en ayunas** o **después de comer** (postprandial)? El rango de
+> referencia cambia según el caso. Indícame también la unidad (mg/dL) para darte
+> una lectura precisa.
+
+### 3. Fuera de alcance (ruta `FUERA_DE_ALCANCE`)
+
+Cualquier mensaje que no sea la interpretación de un examen propio (síntomas,
+saludos, preguntas generales, matemáticas, programación) se declina con cortesía
+y se redirige a un médico cuando corresponde.
+
+**Pregunta:**
+> Me duele mucho la cabeza y tengo fiebre
+
+**Respuesta del agente:**
+> Mi única función es interpretar y comparar resultados de exámenes de
+> laboratorio según tablas de referencia médica. No estoy facultado para evaluar
+> síntomas físicos ni diagnosticar enfermedades. Si te sientes mal, te recomiendo
+> **consultar a un médico o acudir a un centro de salud de inmediato**.
+
+**Pregunta:**
+> ¿Cómo hago un decorador en Python?
+
+**Respuesta del agente:**
+> Lo siento, solo puedo ayudarte a interpretar resultados de exámenes de
+> laboratorio clínico. Esa consulta queda fuera de mi alcance.
+
 ## Estructura del proyecto
 
 ```
@@ -165,9 +257,9 @@ La primera solicitud construye el índice FAISS a partir de `data/pdf/*.pdf` y
 lo persiste en `data/faiss_index/`; las siguientes ejecuciones lo cargan desde
 disco en lugar de volver a generar los embeddings.
 
-## Integración con Telegram — lo que realmente necesitas
+## Integración con Telegram
 
-Elegiste el **modo webhook**, lo que significa:
+Se eligió el **modo webhook**, lo que significa:
 
 1. **Un token de bot de Telegram.** Se crea con [@BotFather](https://t.me/BotFather)
    → `/newbot`. Va en `TELEGRAM_BOT_TOKEN`. El bot de este proyecto es
@@ -201,7 +293,7 @@ adicional.
 Telegram ──HTTPS──▶ Caddy (:80/:443, TLS automático) ──HTTP──▶ api (FastAPI, :8000)
                         │                                          │
                         │ certificado Let's Encrypt                │ LangGraph
-                        │ (reto HTTP-01 vía DuckDNS)                │  + FAISS
+                        │ (reto HTTP-01 vía DuckDNS)               │  + FAISS
                         ▼                                          ▼
                   lab-agent.duckdns.org                     Gemini API (LLM + embeddings)
 ```
