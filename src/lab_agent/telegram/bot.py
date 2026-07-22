@@ -24,10 +24,19 @@ async def send_message(chat_id: int, text: str) -> None:
         raise RuntimeError("TELEGRAM_BOT_TOKEN is not configured")
 
     url = f"{TELEGRAM_API_BASE}/bot{config.TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": chat_id, "text": text, "parse_mode": "Markdown"}
 
     async with httpx.AsyncClient(timeout=15) as client:
-        response = await client.post(url, json=payload)
+        response = await client.post(
+            url, json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown"}
+        )
+        if response.status_code == 400:
+            # El LLM puede generar markdown mal balanceado (asteriscos/guiones
+            # bajos sin cerrar); Telegram rechaza el mensaje completo en ese
+            # caso. Se reintenta en texto plano para no perder la respuesta.
+            logger.warning(
+                "Markdown parse failed, retrying as plain text: %s", response.text
+            )
+            response = await client.post(url, json={"chat_id": chat_id, "text": text})
         if response.status_code != 200:
             logger.error("Failed to send Telegram message: %s", response.text)
             response.raise_for_status()
