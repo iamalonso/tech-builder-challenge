@@ -32,7 +32,7 @@ def build_embedding_model() -> GoogleGenerativeAIEmbeddings:
 
 def build_vector_store(embedding_model: GoogleGenerativeAIEmbeddings) -> FAISS:
     """Builds the FAISS index from the PDFs, or loads it from disk if already persisted."""
-    if config.FAISS_INDEX_DIR.exists():
+    if (config.FAISS_INDEX_DIR / "index.faiss").exists():
         logger.info("Loading FAISS index from %s", config.FAISS_INDEX_DIR)
         return FAISS.load_local(
             str(config.FAISS_INDEX_DIR),
